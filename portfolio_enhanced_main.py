@@ -202,3 +202,5 @@ if os.getenv("DEEPSEEK_API_KEY") and not (os.getenv("LITELLM_MODEL") or "").stri
 
 if __name__ == "__main__":
     runpy.run_module("main", run_name="__main__")
+
+# One-shot GitHub Actions trigger marker. Safe to remove after verification.
