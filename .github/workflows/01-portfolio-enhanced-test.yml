@@ -1,0 +1,102 @@
+name: 持仓增强分析（测试）
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: '强制运行（跳过交易日检查）'
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: portfolio-enhanced-analysis
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 创建目录
+        run: mkdir -p data logs reports
+
+      - name: 执行持仓增强分析
+        env:
+          # 股票列表 / 私有持仓上下文
+          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
+          PORTFOLIO_POSITIONS: ${{ secrets.PORTFOLIO_POSITIONS }}
+
+          # LLM：沿用现有 DeepSeek Key；可在 Repository Variables 显式覆盖模型
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_KEYS: ${{ secrets.DEEPSEEK_API_KEYS }}
+          LITELLM_MODEL: ${{ vars.LITELLM_MODEL || secrets.LITELLM_MODEL }}
+          LITELLM_FALLBACK_MODELS: ${{ vars.LITELLM_FALLBACK_MODELS || secrets.LITELLM_FALLBACK_MODELS }}
+          LLM_TEMPERATURE: ${{ vars.LLM_TEMPERATURE || secrets.LLM_TEMPERATURE }}
+
+          # 新闻搜索：配置任意一个即可启用
+          BOCHA_API_KEYS: ${{ secrets.BOCHA_API_KEYS }}
+          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
+          SERPAPI_API_KEYS: ${{ secrets.SERPAPI_API_KEYS }}
+          BRAVE_API_KEYS: ${{ secrets.BRAVE_API_KEYS }}
+          MINIMAX_API_KEYS: ${{ secrets.MINIMAX_API_KEYS }}
+          ANSPIRE_API_KEYS: ${{ secrets.ANSPIRE_API_KEYS }}
+          SEARXNG_BASE_URLS: ${{ vars.SEARXNG_BASE_URLS || secrets.SEARXNG_BASE_URLS }}
+          SEARXNG_PUBLIC_INSTANCES_ENABLED: ${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED }}
+
+          # 可选数据源
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          TICKFLOW_API_KEY: ${{ secrets.TICKFLOW_API_KEY }}
+          REALTIME_SOURCE_PRIORITY: ${{ vars.REALTIME_SOURCE_PRIORITY || 'tencent,akshare_sina,efinance,akshare_em' }}
+
+          # 报告
+          REPORT_TYPE: ${{ vars.REPORT_TYPE || 'simple' }}
+          REPORT_LANGUAGE: ${{ vars.REPORT_LANGUAGE || 'zh' }}
+          MARKET_REVIEW_ENABLED: 'false'
+          MAX_WORKERS: ${{ vars.MAX_WORKERS || '1' }}
+          ENABLE_CHIP_DISTRIBUTION: ${{ vars.ENABLE_CHIP_DISTRIBUTION || 'false' }}
+        run: |
+          if [ -z "${STOCK_LIST:-}" ]; then
+            echo '❌ STOCK_LIST 未配置'
+            exit 1
+          fi
+          if [ -z "${PORTFOLIO_POSITIONS:-}" ]; then
+            echo '❌ PORTFOLIO_POSITIONS Secret 未配置'
+            exit 1
+          fi
+          if [ -z "${DEEPSEEK_API_KEY:-}" ] && [ -z "${DEEPSEEK_API_KEYS:-}" ]; then
+            echo '❌ DeepSeek API Key 未配置'
+            exit 1
+          fi
+
+          FORCE_ARG=''
+          if [ "${{ github.event.inputs.force_run }}" = 'true' ]; then
+            FORCE_ARG='--force-run'
+          fi
+
+          echo '🚀 开始持仓增强分析（不会打印私有持仓内容）'
+          python portfolio_enhanced_main.py --no-market-review $FORCE_ARG
+
+      - name: 上传报告
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: portfolio-enhanced-reports-${{ github.run_number }}
+          path: |
+            reports/
+            logs/
+          retention-days: 30
