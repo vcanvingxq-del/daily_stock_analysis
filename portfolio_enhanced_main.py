@@ -28,6 +28,15 @@ import src.analyzer as analyzer_module
 
 
 PORTFOLIO_ENV = "PORTFOLIO_POSITIONS"
+NEWS_SEARCH_ENV_KEYS = (
+    "BOCHA_API_KEYS",
+    "TAVILY_API_KEYS",
+    "SERPAPI_API_KEYS",
+    "BRAVE_API_KEYS",
+    "MINIMAX_API_KEYS",
+    "ANSPIRE_API_KEYS",
+    "SEARXNG_BASE_URLS",
+)
 
 # Full analyzer DEBUG prompt/response dumps can contain private holding details.
 # Keep ordinary INFO diagnostics while suppressing those full payload dumps.
@@ -76,6 +85,10 @@ def _load_private_portfolio() -> Dict[str, Any]:
         )
         return {}
     return payload
+
+
+def _news_search_configured() -> bool:
+    return any((os.getenv(key) or "").strip() for key in NEWS_SEARCH_ENV_KEYS)
 
 
 _PRIVATE_PORTFOLIO = _load_private_portfolio()
@@ -158,7 +171,7 @@ def _portfolio_prompt_section(context: Mapping[str, Any], stock_name: str) -> st
     if total_assets is not None and total_assets > 0:
         lines.append(f"- 账户总资产快照：{total_assets:.2f} 元" + (f"（截至 {snapshot_as_of}）" if snapshot_as_of else ""))
     if weight_pct is not None:
-        lines.append(f"- 该股占账户总资产约：{weight_pct:.2f}%（按快照口径估算）")
+        lines.append(f"- 当前该股占账户总资产约：{weight_pct:.2f}%（按本轮行情与账户快照估算）")
     if cash is not None and cash >= 0:
         lines.append(f"- 可用现金快照：{cash:.2f} 元" + (f"（截至 {snapshot_as_of}）" if snapshot_as_of else ""))
 
@@ -172,6 +185,8 @@ def _portfolio_prompt_section(context: Mapping[str, Any], stock_name: str) -> st
             "- 账户/成本数据来自用户私有快照，若与本轮实时行情冲突，以本轮行情为价格事实，并明确快照可能滞后。",
             "- 不新增 JSON 键；请在现有 operation_advice、dashboard.core_conclusion、dashboard.position_advice、dashboard.battle_plan 等字段中体现持仓动作。",
             "- dashboard.position_advice.holding 必须明确引用当前持股数量、成本、估算盈亏，并结合账户仓位占比给出动作；不得只写泛化的“持有观察”。",
+            "- 若上方给出了当前账户占比，必须把它当作当前仓位事实；禁止把约30%误写成1成等明显冲突的仓位。",
+            "- 必须区分“当前仓位占比”和“建议目标仓位”，如建议减仓，要明确从当前占比向什么目标区间调整，不能混写。",
             "- 最终结论必须能回答：对这笔已经持有的仓位，下一交易日具体是持有、减仓、止损、等待确认还是逢低加仓；给出触发条件和价格纪律。",
         ]
     )
@@ -198,6 +213,22 @@ def _portfolio_aware_format_prompt(
         report_language=report_language,
         analysis_context_pack_summary=analysis_context_pack_summary,
     )
+
+    # Upstream currently uses the same wording for “search not configured” and
+    # “search executed but returned zero hits”.  For portfolio decisions that is
+    # too strong: no search evidence must never be reported as “no bad news”.
+    if not news_context and not _news_search_configured():
+        prompt = prompt.replace(
+            "未搜索到该股票近期的相关新闻。请主要依据技术面数据进行分析。",
+            "本轮未配置可用的新闻搜索能力，因此没有执行新闻检索。请主要依据技术面数据进行分析。",
+        )
+        prompt += (
+            "\n\n### 新闻证据约束（强制）\n"
+            "- 本轮新闻检索未执行，必须写“新闻/消息面数据缺失”或“未配置新闻搜索能力”。\n"
+            "- 禁止写“近期无重大利空”“未搜索到重大利空”“消息面暂无利空”等结论。\n"
+            "- `latest_news`、`risk_alerts`、`positive_catalysts` 不得把“没有搜索证据”包装成事实性新闻判断。\n"
+        )
+
     section = _portfolio_prompt_section(context, context.get("stock_name") or name)
     if not section:
         return prompt
@@ -230,5 +261,3 @@ if os.getenv("DEEPSEEK_API_KEY") and not (os.getenv("LITELLM_MODEL") or "").stri
 
 if __name__ == "__main__":
     runpy.run_module("main", run_name="__main__")
-
-# One-shot reliability retest marker; remove after verification.
