@@ -8,12 +8,6 @@ on:
         required: false
         default: true
         type: boolean
-  # One-shot trigger path used for automated verification. Removed after the test run.
-  push:
-    branches:
-      - main
-    paths:
-      - 'portfolio_enhanced_main.py'
 
 concurrency:
   group: portfolio-enhanced-analysis
@@ -43,8 +37,7 @@ jobs:
 
       - name: 执行持仓增强分析
         env:
-          # push 仅复测首轮失败标的；手动运行仍使用正式 STOCK_LIST。
-          STOCK_LIST: ${{ github.event_name == 'push' && '000977,002579' || vars.STOCK_LIST || secrets.STOCK_LIST }}
+          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
           PORTFOLIO_POSITIONS: ${{ secrets.PORTFOLIO_POSITIONS }}
 
           # LLM：沿用现有 DeepSeek Key；可在 Repository Variables 显式覆盖模型
@@ -100,7 +93,7 @@ jobs:
       - name: 清理私有调试日志
         if: always()
         run: |
-          # DEBUG 日志包含完整 prompt，可能带持仓成本；禁止作为 Actions artifact 上传。
+          # DEBUG 日志可能包含完整 prompt 和持仓成本，禁止作为 Actions artifact 上传。
           rm -f logs/stock_analysis_debug_*.log
 
       - name: 上传报告
