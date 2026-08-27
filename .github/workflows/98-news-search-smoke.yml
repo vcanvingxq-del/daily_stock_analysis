@@ -1,0 +1,43 @@
+name: 新闻搜索零密钥验收（一次性）
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/98-news-search-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 验证公共 SearXNG 新闻搜索
+        run: |
+          python - <<'PY'
+          from src.search_service import SearchService
+
+          service = SearchService(searxng_public_instances_enabled=True)
+          response = service.search_stock_news('000977', '浪潮信息', max_results=3)
+          print('provider=', response.provider)
+          print('success=', response.success)
+          print('count=', len(response.results))
+          for item in response.results[:3]:
+              print('-', item.title[:120])
+          if not response.success or not response.results:
+              raise SystemExit('公共 SearXNG 本轮未返回可用新闻结果')
+          PY
