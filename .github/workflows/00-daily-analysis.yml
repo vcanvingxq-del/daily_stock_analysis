@@ -5,13 +5,6 @@ on:
   schedule:
     - cron: '0 10 * * 1-5'
 
-  # 一次性生产验收：本文件首次切换时由 push 自动跑一遍；验收后删除此 push 触发。
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/00-daily-analysis.yml'
-
   workflow_dispatch:
     inputs:
       mode:
@@ -135,10 +128,7 @@ jobs:
           MODE="${{ github.event.inputs.mode || 'full' }}"
           FORCE_RUN_ARG=""
 
-          # 本次 push 仅用于正式切换验收，强制跑；正式 schedule 仍遵守交易日检查。
-          if [ "${{ github.event_name }}" = "push" ]; then
-            FORCE_RUN_ARG="--force-run"
-          elif [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+          if [ "${{ github.event.inputs.force_run }}" = "true" ]; then
             FORCE_RUN_ARG="--force-run"
           fi
 
