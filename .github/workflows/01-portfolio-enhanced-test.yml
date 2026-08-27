@@ -43,8 +43,8 @@ jobs:
 
       - name: 执行持仓增强分析
         env:
-          # 股票列表 / 私有持仓上下文
-          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
+          # push 仅复测首轮失败标的；手动运行仍使用正式 STOCK_LIST。
+          STOCK_LIST: ${{ github.event_name == 'push' && '000977,002579' || vars.STOCK_LIST || secrets.STOCK_LIST }}
           PORTFOLIO_POSITIONS: ${{ secrets.PORTFOLIO_POSITIONS }}
 
           # LLM：沿用现有 DeepSeek Key；可在 Repository Variables 显式覆盖模型
@@ -94,8 +94,14 @@ jobs:
             FORCE_ARG='--force-run'
           fi
 
-          echo '🚀 开始持仓增强分析（不会打印私有持仓内容）'
+          echo '🚀 开始持仓增强分析（不会在控制台打印私有持仓内容）'
           python portfolio_enhanced_main.py --no-market-review $FORCE_ARG
+
+      - name: 清理私有调试日志
+        if: always()
+        run: |
+          # DEBUG 日志包含完整 prompt，可能带持仓成本；禁止作为 Actions artifact 上传。
+          rm -f logs/stock_analysis_debug_*.log
 
       - name: 上传报告
         uses: actions/upload-artifact@v6
