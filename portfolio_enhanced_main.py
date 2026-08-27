@@ -7,14 +7,17 @@ list.  This wrapper keeps the upstream code untouched and appends a private,
 per-symbol holding context to the LLM prompt when ``PORTFOLIO_POSITIONS`` is
 provided by the runtime environment.
 
-Important privacy property: the raw environment value is never printed.  The
-portfolio section is appended at the end of the prompt so the normal INFO-level
-500-character prompt preview does not expose holding details.
+Privacy notes:
+- the raw ``PORTFOLIO_POSITIONS`` environment value is never printed;
+- the private section is appended after the normal INFO-level prompt preview;
+- analyzer DEBUG logging is raised to INFO so full prompts/responses containing
+  holding details are not written by this wrapper.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import runpy
@@ -25,6 +28,10 @@ import src.analyzer as analyzer_module
 
 
 PORTFOLIO_ENV = "PORTFOLIO_POSITIONS"
+
+# Full analyzer DEBUG prompt/response dumps can contain private holding details.
+# Keep ordinary INFO diagnostics while suppressing those full payload dumps.
+analyzer_module.logger.setLevel(logging.INFO)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -127,6 +134,12 @@ def _portfolio_prompt_section(context: Mapping[str, Any], stock_name: str) -> st
     meta = _PRIVATE_PORTFOLIO.get("_meta")
     meta = meta if isinstance(meta, Mapping) else {}
 
+    total_assets = _safe_float(account.get("total_assets"))
+    cash = _safe_float(account.get("cash"))
+    weight_pct = None
+    if total_assets is not None and total_assets > 0 and market_value is not None:
+        weight_pct = market_value / total_assets * 100.0
+
     lines = [
         "## 🔒 当前持仓上下文（私有输入，仅用于个性化决策）",
         f"- 标的：{stock_name}（{code}）",
@@ -141,13 +154,11 @@ def _portfolio_prompt_section(context: Mapping[str, Any], stock_name: str) -> st
     if pnl_pct is not None and pnl_amount is not None:
         lines.append(f"- 按本轮行情估算浮动盈亏：{pnl_amount:+.2f} 元（{pnl_pct:+.2f}%）")
 
-    total_assets = _safe_float(account.get("total_assets"))
-    cash = _safe_float(account.get("cash"))
     snapshot_as_of = str(meta.get("as_of") or "").strip()
     if total_assets is not None and total_assets > 0:
         lines.append(f"- 账户总资产快照：{total_assets:.2f} 元" + (f"（截至 {snapshot_as_of}）" if snapshot_as_of else ""))
-        if market_value is not None:
-            lines.append(f"- 该股占账户总资产约：{market_value / total_assets * 100.0:.2f}%（按快照口径估算）")
+    if weight_pct is not None:
+        lines.append(f"- 该股占账户总资产约：{weight_pct:.2f}%（按快照口径估算）")
     if cash is not None and cash >= 0:
         lines.append(f"- 可用现金快照：{cash:.2f} 元" + (f"（截至 {snapshot_as_of}）" if snapshot_as_of else ""))
 
@@ -160,6 +171,7 @@ def _portfolio_prompt_section(context: Mapping[str, Any], stock_name: str) -> st
             "- 若趋势/事件证据转弱，优先给出风险处置、反弹减仓或止损计划；若趋势转强，也要结合当前位置与仓位控制追高风险。",
             "- 账户/成本数据来自用户私有快照，若与本轮实时行情冲突，以本轮行情为价格事实，并明确快照可能滞后。",
             "- 不新增 JSON 键；请在现有 operation_advice、dashboard.core_conclusion、dashboard.position_advice、dashboard.battle_plan 等字段中体现持仓动作。",
+            "- dashboard.position_advice.holding 必须明确引用当前持股数量、成本、估算盈亏，并结合账户仓位占比给出动作；不得只写泛化的“持有观察”。",
             "- 最终结论必须能回答：对这笔已经持有的仓位，下一交易日具体是持有、减仓、止损、等待确认还是逢低加仓；给出触发条件和价格纪律。",
         ]
     )
@@ -167,6 +179,7 @@ def _portfolio_prompt_section(context: Mapping[str, Any], stock_name: str) -> st
 
 
 _ORIGINAL_FORMAT_PROMPT = analyzer_module.GeminiAnalyzer._format_prompt
+_ORIGINAL_THINKING_EXTRA_BODY = analyzer_module.get_thinking_extra_body
 
 
 def _portfolio_aware_format_prompt(
@@ -191,7 +204,22 @@ def _portfolio_aware_format_prompt(
     return f"{prompt}\n\n{section}\n"
 
 
+def _stable_thinking_extra_body(model: str) -> Optional[dict]:
+    """Use V4 Flash in non-thinking mode for deterministic JSON reports.
+
+    DeepSeek V4 Flash defaults to thinking mode.  The upstream stream parser
+    intentionally consumes final ``content`` only, not ``reasoning_content``;
+    disabling thinking avoids long reasoning-only streams and intermittent
+    empty final-content failures for this structured-report workload.
+    """
+    normalized = (model or "").strip().lower()
+    if normalized == "deepseek-v4-flash" or normalized.startswith("deepseek-v4-flash-"):
+        return {"thinking": {"type": "disabled"}}
+    return _ORIGINAL_THINKING_EXTRA_BODY(model)
+
+
 analyzer_module.GeminiAnalyzer._format_prompt = _portfolio_aware_format_prompt
+analyzer_module.get_thinking_extra_body = _stable_thinking_extra_body
 
 # The repository itself warns that legacy deepseek-chat is deprecated.  When a
 # DeepSeek key is present, prefer the successor unless the user explicitly set
@@ -203,4 +231,4 @@ if os.getenv("DEEPSEEK_API_KEY") and not (os.getenv("LITELLM_MODEL") or "").stri
 if __name__ == "__main__":
     runpy.run_module("main", run_name="__main__")
 
-# One-shot GitHub Actions trigger marker. Safe to remove after verification.
+# One-shot reliability retest marker; remove after verification.
