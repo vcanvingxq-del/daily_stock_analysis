@@ -7,9 +7,6 @@ on:
     paths:
       - '.github/workflows/99-production-switch.yml'
 
-permissions:
-  contents: write
-
 jobs:
   switch:
     runs-on: ubuntu-latest
@@ -17,18 +14,15 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
-      - name: 执行正式切换并验证持仓 Secret
+      - name: 生成正式持仓工作流并验证持仓 Secret
         env:
           PORTFOLIO_POSITIONS: ${{ secrets.PORTFOLIO_POSITIONS }}
         run: python tools/production_switch.py
 
-      - name: 提交正式切换
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/00-daily-analysis.yml
-          git commit -m 'prod: enable portfolio-aware daily analysis'
-          git push origin main
+      - name: 导出补丁后的正式工作流
+        uses: actions/upload-artifact@v6
+        with:
+          name: patched-daily-workflow
+          path: .github/workflows/00-daily-analysis.yml
+          retention-days: 1
