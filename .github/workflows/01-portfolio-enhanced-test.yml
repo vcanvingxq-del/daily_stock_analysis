@@ -8,6 +8,12 @@ on:
         required: false
         default: true
         type: boolean
+  # One-shot trigger path used for automated verification. Removed after the test run.
+  push:
+    branches:
+      - main
+    paths:
+      - 'portfolio_enhanced_main.py'
 
 concurrency:
   group: portfolio-enhanced-analysis
