@@ -1,0 +1,18 @@
+[Unit]
+Description=Daily Stock Analysis - Portfolio Intraday Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stockmonitor
+WorkingDirectory=/opt/daily_stock_analysis
+EnvironmentFile=/opt/daily_stock_analysis/.env.monitor
+ExecStart=/opt/daily_stock_analysis/.venv/bin/python /opt/daily_stock_analysis/portfolio_intraday_monitor.py --daemon --interval 120
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
