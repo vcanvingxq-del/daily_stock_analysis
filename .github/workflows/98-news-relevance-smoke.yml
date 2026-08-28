@@ -1,0 +1,72 @@
+name: 新闻相关度验收（一次性）
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/98-news-relevance-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 设置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 验证浪潮信息新闻相关度
+        env:
+          TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
+        run: |
+          python - <<'PY'
+          import os
+          import portfolio_enhanced_main  # apply portfolio/news monkey patches
+          from src.search_service import SearchService
+
+          keys = [x.strip() for x in (os.getenv('TAVILY_API_KEYS') or '').split(',') if x.strip()]
+          if not keys:
+              raise SystemExit('TAVILY_API_KEYS 未配置')
+
+          service = SearchService(
+              tavily_keys=keys,
+              news_max_age_days=7,
+              news_strategy_profile='medium',
+          )
+          response = service.search_stock_news('000977', '浪潮信息', max_results=5)
+          print('query=', response.query)
+          print('provider=', response.provider)
+          print('success=', response.success)
+          print('count=', len(response.results))
+          direct = 0
+          for item in response.results:
+              print('---')
+              print('title=', item.title)
+              print('category=', item.relevance_category)
+              print('score=', item.relevance_score)
+              print('reasons=', ' | '.join(item.relevance_reasons or []))
+              if item.relevance_category == 'direct_company_news':
+                  direct += 1
+              if (item.relevance_score or 0) <= 0:
+                  raise SystemExit('发现零相关度新闻，验收失败')
+
+          if not response.success:
+              raise SystemExit('新闻搜索调用失败')
+          if not response.results:
+              raise SystemExit('7天窗口未取得可用个股新闻，需继续调优查询')
+          if direct == 0:
+              raise SystemExit('未取得直接个股新闻，需继续调优查询')
+          print('direct_count=', direct)
+          print('NEWS_RELEVANCE_SMOKE=PASS')
+          PY
