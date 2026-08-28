@@ -4,8 +4,11 @@ PushPlus 发送提醒服务
 
 职责：
 1. 通过 PushPlus API 发送 PushPlus 消息
+2. 若配置 WXPUSHER_SPT，则优先通过 WxPusher SPT 发送微信提醒；这样现有调用方
+   无需感知通知通道迁移，且不会把私密凭证写入代码或日志。
 """
 import logging
+import os
 import time
 from typing import Optional
 from datetime import datetime
@@ -13,6 +16,7 @@ import requests
 
 from src.config import Config
 from src.formatters import chunk_content_by_max_bytes, strip_hidden_markdown_metadata
+from src.notification_sender.wxpusher_spt_sender import WxPusherSptSender
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +34,7 @@ class PushplusSender:
         self._pushplus_token = getattr(config, 'pushplus_token', None)
         self._pushplus_topic = getattr(config, 'pushplus_topic', None)
         self._pushplus_max_bytes = getattr(config, 'pushplus_max_bytes', 20000)
+        self._wxpusher = WxPusherSptSender() if (os.getenv('WXPUSHER_SPT') or '').strip() else None
         
     def send_to_pushplus(
         self,
@@ -39,29 +44,18 @@ class PushplusSender:
         timeout_seconds: Optional[float] = None,
     ) -> bool:
         """
-        推送消息到 PushPlus
+        发送消息。
 
-        PushPlus API 格式：
-        POST http://www.pushplus.plus/send
-        {
-            "token": "用户令牌",
-            "title": "消息标题",
-            "content": "消息内容",
-            "template": "html/txt/json/markdown"
-        }
-
-        PushPlus 特点：
-        - 国内推送服务，免费额度充足
-        - 支持微信公众号推送
-        - 支持多种消息格式
-
-        Args:
-            content: 消息内容（Markdown 格式）
-            title: 消息标题（可选）
-
-        Returns:
-            是否发送成功
+        若配置 WXPUSHER_SPT，则优先走 WxPusher 极简推送；否则保持原有
+        PushPlus 行为。该兼容层用于让现有告警调用方平滑迁移通知通道。
         """
+        if self._wxpusher is not None and self._wxpusher.configured:
+            return self._wxpusher.send(
+                content,
+                title=title,
+                timeout_seconds=timeout_seconds,
+            )
+
         if not self._pushplus_token:
             logger.warning("PushPlus Token 未配置，跳过推送")
             return False
