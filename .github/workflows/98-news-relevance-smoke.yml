@@ -26,43 +26,44 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 对比 Tavily A股查询策略
+      - name: 验证直接个股新闻护栏
         env:
           TAVILY_API_KEYS: ${{ secrets.TAVILY_API_KEYS }}
         run: |
           python - <<'PY'
           import os
-          from tavily import TavilyClient
+          import portfolio_enhanced_main  # apply production guardrails
+          from src.search_service import SearchService
 
           keys = [x.strip() for x in (os.getenv('TAVILY_API_KEYS') or '').split(',') if x.strip()]
           if not keys:
               raise SystemExit('TAVILY_API_KEYS 未配置')
-          client = TavilyClient(api_key=keys[0])
 
-          tests = [
-              ('news_short', {'query': '"浪潮信息"', 'topic': 'news', 'days': 7}),
-              ('news_code', {'query': '"浪潮信息" 000977', 'topic': 'news', 'days': 7}),
-              ('news_legal', {'query': '"浪潮电子信息产业股份有限公司"', 'topic': 'news', 'days': 7}),
-              ('general_week', {'query': '"浪潮信息" 000977', 'topic': 'general', 'time_range': 'week'}),
-          ]
+          service = SearchService(
+              tavily_keys=keys,
+              news_max_age_days=7,
+              news_strategy_profile='medium',
+          )
+          response = service.search_stock_news('000977', '浪潮信息', max_results=5)
+          print('query=', response.query)
+          print('provider=', response.provider)
+          print('success=', response.success)
+          print('count=', len(response.results))
 
-          for label, extra in tests:
-              print('\n###', label)
-              try:
-                  result = client.search(
-                      search_depth='advanced',
-                      max_results=5,
-                      include_answer=False,
-                      include_raw_content=False,
-                      **extra,
-                  )
-              except Exception as exc:
-                  print('ERROR=', type(exc).__name__, str(exc))
-                  continue
-              rows = result.get('results', [])
-              print('count=', len(rows))
-              for row in rows:
-                  print('-', row.get('title', ''))
-                  print('  url=', row.get('url', ''))
-                  print('  date=', row.get('published_date') or row.get('publishedDate'))
+          if not response.success:
+              raise SystemExit('Tavily 搜索本身失败')
+
+          for item in response.results:
+              print('---')
+              print('title=', item.title)
+              print('category=', item.relevance_category)
+              print('score=', item.relevance_score)
+              if item.relevance_category != 'direct_company_news':
+                  raise SystemExit('发现非目标公司新闻进入结果，护栏失败')
+
+          if response.results:
+              print('quality_state=direct_company_news_found')
+          else:
+              print('quality_state=no_reliable_direct_news; safe_empty_evidence')
+          print('DIRECT_NEWS_GUARDRAIL=PASS')
           PY
