@@ -1,49 +1,11 @@
-name: WxPusher微信通知验收（一次性）
+name: WxPusher微信通知验收（已停用）
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/97-wxpusher-smoke.yml'
+  workflow_dispatch:
 
 jobs:
-  smoke:
+  disabled:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - name: 验证 WxPusher 微信通知
-        env:
-          WXPUSHER_SPT: ${{ secrets.WXPUSHER_SPT }}
-        run: |
-          python - <<'PY'
-          import json, os, urllib.request
-
-          spt = (os.environ.get('WXPUSHER_SPT') or '').strip()
-          if not spt:
-              raise SystemExit('WXPUSHER_SPT_MISSING')
-          if not spt.startswith('SPT_'):
-              raise SystemExit('WXPUSHER_SPT_FORMAT_INVALID')
-
-          payload = json.dumps({
-              'content': 'WxPusher 微信通知通道验收成功。后续仅在持仓触发关键价位或异常波动时提醒，不会高频刷屏。',
-              'summary': '✅ 股票关键节点监控已接通',
-              'contentType': 1,
-              'spt': spt,
-          }, ensure_ascii=False).encode('utf-8')
-          req = urllib.request.Request(
-              'https://wxpusher.zjiecode.com/api/send/message/simple-push',
-              data=payload,
-              headers={'Content-Type': 'application/json'},
-              method='POST',
-          )
-          with urllib.request.urlopen(req, timeout=12) as resp:
-              http_status = resp.status
-              result = json.loads(resp.read().decode('utf-8'))
-
-          print('wxpusher_http_status=', http_status)
-          print('wxpusher_code=', result.get('code'))
-          if http_status != 200 or result.get('code') not in (1000, 200, 0):
-              print('wxpusher_msg=', result.get('msg', 'unknown'))
-              raise SystemExit('WXPUSHER_SEND_FAILED')
-          print('wxpusher_send=PASS')
-          PY
+      - run: echo 'One-shot WxPusher smoke test disabled.'
