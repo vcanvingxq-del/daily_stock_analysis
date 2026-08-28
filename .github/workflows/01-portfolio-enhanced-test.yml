@@ -37,7 +37,6 @@ jobs:
 
       - name: 执行持仓增强分析
         env:
-          STOCK_LIST: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
           PORTFOLIO_POSITIONS: ${{ secrets.PORTFOLIO_POSITIONS }}
 
           # LLM：沿用现有 DeepSeek Key；可在 Repository Variables 显式覆盖模型
@@ -69,10 +68,6 @@ jobs:
           MAX_WORKERS: ${{ vars.MAX_WORKERS || '1' }}
           ENABLE_CHIP_DISTRIBUTION: ${{ vars.ENABLE_CHIP_DISTRIBUTION || 'false' }}
         run: |
-          if [ -z "${STOCK_LIST:-}" ]; then
-            echo '❌ STOCK_LIST 未配置'
-            exit 1
-          fi
           if [ -z "${PORTFOLIO_POSITIONS:-}" ]; then
             echo '❌ PORTFOLIO_POSITIONS Secret 未配置'
             exit 1
@@ -81,6 +76,52 @@ jobs:
             echo '❌ DeepSeek API Key 未配置'
             exit 1
           fi
+
+          # 持仓增强任务以私有持仓 Secret 为唯一股票清单来源，避免
+          # Repository Variable 的 STOCK_LIST 在调仓后变成陈旧配置。
+          STOCK_LIST="$(python - <<'PY'
+          import json
+          import os
+
+          raw = os.environ.get('PORTFOLIO_POSITIONS', '').strip()
+          try:
+              payload = json.loads(raw)
+          except Exception as exc:
+              raise SystemExit(f'PORTFOLIO_POSITIONS JSON 无效: {type(exc).__name__}')
+
+          if not isinstance(payload, dict):
+              raise SystemExit('PORTFOLIO_POSITIONS 必须是 JSON object')
+
+          codes = []
+          for key, value in payload.items():
+              if str(key).startswith('_') or not isinstance(value, dict):
+                  continue
+              try:
+                  shares = float(value.get('shares', value.get('quantity', 0)) or 0)
+              except (TypeError, ValueError):
+                  shares = 0
+              if shares <= 0:
+                  continue
+              code = str(key).strip().upper()
+              for suffix in ('.SH', '.SZ', '.SS', '.BJ'):
+                  if code.endswith(suffix):
+                      code = code[:-len(suffix)]
+                      break
+              for prefix in ('SH', 'SZ', 'SS', 'BJ'):
+                  if code.startswith(prefix) and code[len(prefix):].isdigit():
+                      code = code[len(prefix):]
+                      break
+              if code and code not in codes:
+                  codes.append(code)
+
+          if not codes:
+              raise SystemExit('PORTFOLIO_POSITIONS 中没有 shares>0 的持仓')
+          print(','.join(codes))
+          PY
+          )"
+          export STOCK_LIST
+          echo "✅ 已从私有持仓 Secret 同步 ${STOCK_LIST//[^,]/}" >/dev/null
+          echo '✅ 已从私有持仓 Secret 自动生成本轮股票清单（不打印代码）'
 
           FORCE_ARG=''
           if [ "${{ github.event.inputs.force_run }}" = 'true' ]; then
