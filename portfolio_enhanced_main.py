@@ -12,6 +12,13 @@ Privacy notes:
 - the private section is appended after the normal INFO-level prompt preview;
 - analyzer DEBUG logging is raised to INFO so full prompts/responses containing
   holding details are not written by this wrapper.
+
+News-quality notes:
+- A-share daily news searches use an exact company identity plus decision-useful
+  event terms before falling back to a broader exact-identity query;
+- search fillers with zero target relevance are never admitted to the LLM;
+- an empty high-quality result set is treated as missing evidence, never as
+  proof that no bad news exists.
 """
 
 from __future__ import annotations
@@ -25,6 +32,7 @@ import sys
 from typing import Any, Dict, Mapping, Optional
 
 import src.analyzer as analyzer_module
+import src.search_service as search_service_module
 
 
 PORTFOLIO_ENV = "PORTFOLIO_POSITIONS"
@@ -193,6 +201,127 @@ def _portfolio_prompt_section(context: Mapping[str, Any], stock_name: str) -> st
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Portfolio-specific news quality layer
+# ---------------------------------------------------------------------------
+
+_ORIGINAL_SEARCH_STOCK_NEWS = search_service_module.SearchService.search_stock_news
+_ORIGINAL_FILTER_RANKED_NEWS = search_service_module.SearchService._filter_ranked_news_for_context
+
+
+def _is_a_share_target(stock_code: str, stock_name: str) -> bool:
+    code = _normalize_code(stock_code)
+    return code.isdigit() and len(code) == 6 and bool(stock_name.strip())
+
+
+def _a_share_news_focus(stock_code: str, stock_name: str) -> list[str]:
+    """High-precision first-pass query for decision-useful A-share events."""
+    code = _normalize_code(stock_code)
+    return [
+        f'"{stock_name.strip()}"',
+        code,
+        "最新 公告 业绩 订单 中标 重大合同 合作 减持 增持 处罚 诉讼 监管",
+    ]
+
+
+def _a_share_news_fallback_focus(stock_code: str, stock_name: str) -> list[str]:
+    """Broader fallback that still anchors both company name and stock code."""
+    code = _normalize_code(stock_code)
+    return [f'"{stock_name.strip()}"', code, "最新消息 公告"]
+
+
+def _portfolio_search_stock_news(
+    self: Any,
+    stock_code: str,
+    stock_name: str,
+    max_results: int = 5,
+    focus_keywords: Optional[list[str]] = None,
+) -> Any:
+    """Prefer exact A-share identity and material events, with one safe fallback."""
+    if focus_keywords or not _is_a_share_target(stock_code, stock_name):
+        return _ORIGINAL_SEARCH_STOCK_NEWS(
+            self,
+            stock_code,
+            stock_name,
+            max_results=max_results,
+            focus_keywords=focus_keywords,
+        )
+
+    primary = _ORIGINAL_SEARCH_STOCK_NEWS(
+        self,
+        stock_code,
+        stock_name,
+        max_results=max_results,
+        focus_keywords=_a_share_news_focus(stock_code, stock_name),
+    )
+    if primary.success and primary.results:
+        return primary
+    if not primary.success:
+        return primary
+
+    search_service_module.logger.info(
+        "[持仓新闻增强] %s(%s) 高精度查询无有效结果，回退到精确身份宽搜",
+        stock_name,
+        stock_code,
+    )
+    return _ORIGINAL_SEARCH_STOCK_NEWS(
+        self,
+        stock_code,
+        stock_name,
+        max_results=max_results,
+        focus_keywords=_a_share_news_fallback_focus(stock_code, stock_name),
+    )
+
+
+def _strict_filter_ranked_news_for_context(
+    cls: Any,
+    response: Any,
+    *,
+    log_scope: str,
+) -> Any:
+    """Never admit all-zero relevance fillers when no meaningful hit exists.
+
+    Upstream intentionally keeps the original candidates when every result has
+    zero relevance.  That is useful for broad research, but unsafe for a
+    portfolio decision prompt because unrelated industry headlines can be
+    mistaken for company news.  Here an all-zero set becomes an empty set so
+    the model sees "missing evidence" instead of noise.
+    """
+    filtered = _ORIGINAL_FILTER_RANKED_NEWS(response, log_scope=log_scope)
+    if not filtered.success or not filtered.results:
+        return filtered
+
+    meaningful = [
+        item
+        for item in filtered.results
+        if (
+            item.relevance_category == search_service_module.SearchService._DIRECT_NEWS_CATEGORY
+            or (item.relevance_score or 0) > 0
+        )
+    ]
+    if meaningful:
+        return filtered
+
+    search_service_module.logger.info(
+        "[持仓新闻增强] %s: 全部候选与目标股票相关度为0，拒绝注入LLM上下文",
+        log_scope,
+    )
+    return search_service_module.SearchResponse(
+        query=filtered.query,
+        results=[],
+        provider=filtered.provider,
+        success=filtered.success,
+        error_message=filtered.error_message,
+        search_time=filtered.search_time,
+    )
+
+
+search_service_module.SearchService.search_stock_news = _portfolio_search_stock_news
+search_service_module.SearchService._filter_ranked_news_for_context = classmethod(
+    _strict_filter_ranked_news_for_context
+)
+
+
 _ORIGINAL_FORMAT_PROMPT = analyzer_module.GeminiAnalyzer._format_prompt
 _ORIGINAL_THINKING_EXTRA_BODY = analyzer_module.get_thinking_extra_body
 
@@ -214,19 +343,28 @@ def _portfolio_aware_format_prompt(
         analysis_context_pack_summary=analysis_context_pack_summary,
     )
 
-    # Upstream currently uses the same wording for “search not configured” and
-    # “search executed but returned zero hits”.  For portfolio decisions that is
-    # too strong: no search evidence must never be reported as “no bad news”.
-    if not news_context and not _news_search_configured():
-        prompt = prompt.replace(
-            "未搜索到该股票近期的相关新闻。请主要依据技术面数据进行分析。",
-            "本轮未配置可用的新闻搜索能力，因此没有执行新闻检索。请主要依据技术面数据进行分析。",
-        )
+    # Upstream currently uses similar wording for “search not configured” and
+    # “search executed but returned zero high-quality hits”.  For portfolio
+    # decisions neither state is evidence that there is no bad news.
+    if not news_context:
+        if not _news_search_configured():
+            prompt = prompt.replace(
+                "未搜索到该股票近期的相关新闻。请主要依据技术面数据进行分析。",
+                "本轮未配置可用的新闻搜索能力，因此没有执行新闻检索。请主要依据技术面数据进行分析。",
+            )
+            evidence_state = "本轮新闻检索未执行，必须写“新闻/消息面数据缺失”或“未配置新闻搜索能力”。"
+        else:
+            prompt = prompt.replace(
+                "未搜索到该股票近期的相关新闻。请主要依据技术面数据进行分析。",
+                "本轮已配置新闻搜索，但经过时效和相关度过滤后，没有获得足够可靠的个股新闻。请主要依据技术面数据进行分析。",
+            )
+            evidence_state = "本轮没有获得足够高相关度的个股新闻，只能写“未取得可靠消息面证据”，不能等同于“没有利空”。"
+
         prompt += (
             "\n\n### 新闻证据约束（强制）\n"
-            "- 本轮新闻检索未执行，必须写“新闻/消息面数据缺失”或“未配置新闻搜索能力”。\n"
-            "- 禁止写“近期无重大利空”“未搜索到重大利空”“消息面暂无利空”等结论。\n"
-            "- `latest_news`、`risk_alerts`、`positive_catalysts` 不得把“没有搜索证据”包装成事实性新闻判断。\n"
+            f"- {evidence_state}\n"
+            "- 禁止写“近期无重大利空”“未搜索到重大利空”“消息面暂无利空”等无证据结论。\n"
+            "- `latest_news`、`risk_alerts`、`positive_catalysts` 不得把“缺少搜索证据”包装成事实性新闻判断。\n"
         )
 
     section = _portfolio_prompt_section(context, context.get("stock_name") or name)
