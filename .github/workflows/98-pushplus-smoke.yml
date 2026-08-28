@@ -1,11 +1,45 @@
-name: PushPlus微信通知验收（已停用）
+name: PushPlus微信通知验收（一次性）
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/98-pushplus-smoke.yml'
 
 jobs:
-  disabled:
-    if: ${{ false }}
+  smoke:
     runs-on: ubuntu-latest
     steps:
-      - run: echo 'One-shot PushPlus smoke test disabled.'
+      - name: 验证 PushPlus 微信通知
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+
+          token = (os.environ.get('PUSHPLUS_TOKEN') or '').strip()
+          if not token:
+              raise SystemExit('PUSHPLUS_TOKEN_MISSING')
+
+          payload = json.dumps({
+              'token': token,
+              'title': '✅ 股票关键节点监控已接通',
+              'content': 'PushPlus 微信通知通道验收成功。后续只在持仓触发关键价位或异常波动时提醒，不会高频刷屏。',
+              'template': 'txt',
+          }, ensure_ascii=False).encode('utf-8')
+          req = urllib.request.Request(
+              'https://www.pushplus.plus/send',
+              data=payload,
+              headers={'Content-Type': 'application/json'},
+              method='POST',
+          )
+          with urllib.request.urlopen(req, timeout=10) as resp:
+              result = json.loads(resp.read().decode('utf-8'))
+          print('pushplus_http=PASS')
+          print('pushplus_code=', result.get('code'))
+          if result.get('code') != 200:
+              print('pushplus_msg=', result.get('msg'))
+              raise SystemExit('PUSHPLUS_SEND_FAILED')
+          print('pushplus_send=PASS')
+          PY
