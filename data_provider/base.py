@@ -1570,17 +1570,17 @@ class DataFetcherManager:
         optional_fetchers: List[BaseFetcher] = []
        
         hithink_api_key = (
-        getattr(config, "hithink_finance_api_key", None) or ""
+            getattr(config, "hithink_finance_api_key", None) or ""
         ).strip()
 
         if hithink_api_key:
-        optional_fetchers.append(
-        HiThinkFetcher(api_key=hithink_api_key)
-        )
-       else:
-       logger.debug(
-        "[数据源初始化] 跳过未配置的 HiThinkFetcher"
-    )
+            optional_fetchers.append(
+                HiThinkFetcher(api_key=hithink_api_key)
+            )
+        else:
+            logger.debug(
+                "[数据源初始化] 跳过未配置的 HiThinkFetcher"
+            )
         tushare_token = (getattr(config, "tushare_token", None) or "").strip()
         if tushare_token:
             optional_fetchers.append(TushareFetcher())  # 会根据 Token 配置自动调整优先级
