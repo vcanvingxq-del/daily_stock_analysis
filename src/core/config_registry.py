@@ -778,7 +778,7 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": ["secret_value"],
     },
-        "HITHINK_FINANCE_API_KEY": {
+    "HITHINK_FINANCE_API_KEY": {
         "title": "HiThink Financial API Key",
         "description": (
             "API key for HiThink Financial API A-share structured market data. "
@@ -794,8 +794,15 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "options": [],
         "validation": {},
         "display_order": 12,
+        "help_key": "settings.data_source.HITHINK_FINANCE_API_KEY",
         "examples": [
             "HITHINK_FINANCE_API_KEY=your_hithink_api_key",
+        ],
+        "docs": [
+            {
+                "label": "HiThink Financial API",
+                "href": "https://github.com/HiThink-Tech/Financial-API",
+            },
         ],
         "warning_codes": ["secret_value"],
     },
