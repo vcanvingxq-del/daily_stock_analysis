@@ -618,6 +618,7 @@ class DataFetcherManager:
 
     _DAILY_MARKET_FETCHER_SUPPORT = {
         "EfinanceFetcher": {"cn"},
+        "HiThinkFetcher": {"cn"},
         "TencentFetcher": {"cn"},
         "AkshareFetcher": {"cn", "hk"},
         "TushareFetcher": {"cn", "hk"},
@@ -1547,6 +1548,7 @@ class DataFetcherManager:
           5. TencentFetcher (Priority 5) - A 股最终兜底
         """
         from src.config import get_config
+        from .hithink_fetcher import HiThinkFetcher
         from .efinance_fetcher import EfinanceFetcher
         from .tencent_fetcher import TencentFetcher
         from .akshare_fetcher import AkshareFetcher
@@ -1566,7 +1568,19 @@ class DataFetcherManager:
         baostock = BaostockFetcher()
         yfinance = YfinanceFetcher()
         optional_fetchers: List[BaseFetcher] = []
+       
+        hithink_api_key = (
+        getattr(config, "hithink_finance_api_key", None) or ""
+        ).strip()
 
+        if hithink_api_key:
+        optional_fetchers.append(
+        HiThinkFetcher(api_key=hithink_api_key)
+        )
+       else:
+       logger.debug(
+        "[数据源初始化] 跳过未配置的 HiThinkFetcher"
+    )
         tushare_token = (getattr(config, "tushare_token", None) or "").strip()
         if tushare_token:
             optional_fetchers.append(TushareFetcher())  # 会根据 Token 配置自动调整优先级
