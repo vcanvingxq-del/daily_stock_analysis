@@ -33,6 +33,7 @@
 """
 
 from .base import BaseFetcher, DataFetcherManager
+from .hithink_fetcher import HiThinkFetcher
 from .efinance_fetcher import EfinanceFetcher
 from .tencent_fetcher import TencentFetcher
 from .akshare_fetcher import AkshareFetcher, is_hk_stock_code
@@ -48,6 +49,7 @@ from .us_index_mapping import is_us_index_code, is_us_stock_code, get_us_index_y
 __all__ = [
     'BaseFetcher',
     'DataFetcherManager',
+    'HiThinkFetcher',
     'EfinanceFetcher',
     'TencentFetcher',
     'AkshareFetcher',
