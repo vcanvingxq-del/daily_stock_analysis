@@ -49,11 +49,12 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+          python -c "import futu; print('✅ futu SDK import OK')"
 
       - name: 创建目录
         run: mkdir -p data logs reports
 
-      - name: 执行每日持仓增强分析
+      - name: 执行股票分析
         env:
           # ===== 私有持仓 =====
           PORTFOLIO_POSITIONS: ${{ secrets.PORTFOLIO_POSITIONS }}
@@ -88,6 +89,7 @@ jobs:
           BRAVE_API_KEYS: ${{ secrets.BRAVE_API_KEYS }}
           MINIMAX_API_KEYS: ${{ secrets.MINIMAX_API_KEYS }}
           SEARXNG_BASE_URLS: ${{ vars.SEARXNG_BASE_URLS || secrets.SEARXNG_BASE_URLS }}
+          # 公共 SearXNG 实例发现默认关闭；未配置时运行时按 false 处理。
           SEARXNG_PUBLIC_INSTANCES_ENABLED: ${{ vars.SEARXNG_PUBLIC_INSTANCES_ENABLED || secrets.SEARXNG_PUBLIC_INSTANCES_ENABLED }}
 
           # ===== 行情数据 =====
