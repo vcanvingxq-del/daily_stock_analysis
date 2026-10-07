@@ -276,6 +276,14 @@ const settingsHelpZhCN: SettingsHelpMap = {
     impact: ['影响部分 A 股基础数据、股票列表和相关增强数据获取。'],
     notes: ['不要把 token 提交到仓库或公开日志。'],
   },
+   'settings.data_source.HITHINK_FINANCE_API_KEY': {
+    title: 'HiThink Financial API Key',
+    summary: '用于启用 HiThink Financial API 的 A 股结构化市场数据。',
+    usage: '填入 HiThink Financial API Key；未配置时系统会继续使用其他可用数据源。',
+    valueNotes: ['当前主要用于可选的 A 股历史日 K 数据获取。'],
+    impact: ['影响 A 股历史日 K 数据源的优先获取与回退链。'],
+    notes: ['不要在 issue、日志或截图中暴露真实 API Key。'],
+  },
   'settings.data_source.TICKFLOW_API_KEY': {
     title: 'TickFlow API Key',
     summary: '用于启用 TickFlow A 股日 K、实时行情、股票列表/名称与大盘复盘增强数据。',
@@ -1506,6 +1514,14 @@ const settingsHelpEnUS: SettingsHelpMap = {
     valueNotes: ['Available APIs depend on your Tushare permission level.'],
     impact: ['Affects some A-share base data, stock lists, and enrichment data.'],
     notes: ['Do not commit the token or print it in public logs.'],
+  },
+    'settings.data_source.HITHINK_FINANCE_API_KEY': {
+    title: 'HiThink Financial API Key',
+    summary: 'Enables structured A-share market data from HiThink Financial API.',
+    usage: 'Paste your HiThink Financial API key here. When empty, the system continues with other available data sources.',
+    valueNotes: ['Currently used mainly for optional A-share historical daily K-line data.'],
+    impact: ['Affects priority access and fallback behavior for A-share historical daily K-line data.'],
+    notes: ['Do not expose real API keys in issues, logs, or screenshots.'],
   },
   'settings.data_source.TICKFLOW_API_KEY': {
     title: 'TickFlow API Key',

@@ -778,6 +778,34 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         ],
         "warning_codes": ["secret_value"],
     },
+    "HITHINK_FINANCE_API_KEY": {
+        "title": "HiThink Financial API Key",
+        "description": (
+            "API key for HiThink Financial API A-share structured market data. "
+            "Currently used for optional historical daily K-line access."
+        ),
+        "category": "data_source",
+        "data_type": "string",
+        "ui_control": "password",
+        "is_sensitive": True,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 12,
+        "help_key": "settings.data_source.HITHINK_FINANCE_API_KEY",
+        "examples": [
+            "HITHINK_FINANCE_API_KEY=your_hithink_api_key",
+        ],
+        "docs": [
+            {
+                "label": "HiThink Financial API",
+                "href": "https://github.com/HiThink-Tech/Financial-API",
+            },
+        ],
+        "warning_codes": ["secret_value"],
+    },
     "TICKFLOW_API_KEY": {
         "title": "TickFlow API Key",
         "description": "API key for optional TickFlow A-share daily K-lines, realtime quotes, stock list/name lookup, and market review enhancement. Permission failures fail open to existing providers.",

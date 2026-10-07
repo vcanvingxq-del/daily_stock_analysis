@@ -166,6 +166,7 @@ daily_stock_analysis/
 | `SEARXNG_BASE_URLS` | SearXNG 自建实例（无配额兜底，需在 settings.yml 启用 format: json）；留空时仅在显式启用公共实例发现后使用 `searx.space` | 可选 |
 | `SEARXNG_PUBLIC_INSTANCES_ENABLED` | 是否在 `SEARXNG_BASE_URLS` 为空时自动从 `searx.space` 获取公共实例（默认 `false`）。公共实例普遍限流或未开启 JSON 输出，开启后每次分析可能多耗 30~60 秒且新闻面为空 | 可选 |
 | `TUSHARE_TOKEN` | [Tushare Pro](https://tushare.pro/weborder/#/login?reg=834638 ) Token | 可选 |
+| `HITHINK_FINANCE_API_KEY` | [HiThink Financial API](https://github.com/HiThink-Tech/Financial-API) API Key；可选，用于 A 股历史日 K 结构化数据。配置后优先尝试 HiThink，失败或未配置时继续使用现有数据源回退链。 | 可选 |
 | `TUSHARE_HTTP_URL` | Tushare Pro HTTP 接入地址；留空（或未设置/空白）时使用官方端点 `http://api.tushare.pro`，仅在需通过公司内网代理、跨境网络或自建镜像时填写 `http://` 或 `https://` 开头的完整地址 | 可选 |
 | `TICKFLOW_API_KEY` | [TickFlow](https://tickflow.org) API Key；可选，用于 A 股日 K、实时行情、股票列表/名称与大盘复盘增强；失败或权限不足时自动回退。 | 可选 |
 | `LONGBRIDGE_OAUTH_CLIENT_ID` | [Longbridge OpenAPI](https://open.longbridge.com/) OAuth client_id；留空且无 Legacy Access Token 时会兼容使用 `LONGBRIDGE_APP_KEY` | 可选 |
@@ -184,7 +185,7 @@ daily_stock_analysis/
 | `LONGBRIDGE_PRINT_QUOTE_PACKAGES` | 连接时是否打印行情包（未设置时默认 `false`；设为 `1`/`true`/`yes` 开启） | 可选 |
 | `ENABLE_CHIP_DISTRIBUTION` | 启用筹码分布（Actions 默认 false；需筹码数据时在 Variables 中设为 true，接口可能不稳定） | 可选 |
 
-> **GitHub Actions：** 仓库自带 `00-daily-analysis.yml` 已把 `TUSHARE_TOKEN`、`TICKFLOW_API_KEY` / `TICKFLOW_*` 和上表中的 `LONGBRIDGE_*` 映射到任务环境。TickFlow 的 API Key 建议放在 **Secrets**，优先级、复权和批量开关可放在 **Variables** 或 **Secrets**。Longbridge OAuth 方式需要一个 client_id（优先 `LONGBRIDGE_OAUTH_CLIENT_ID`；留空且无 Legacy Access Token 时使用 `LONGBRIDGE_APP_KEY` 兼容），并把本机 `~/.longbridge/openapi/tokens/<client_id>` 文件 base64 后保存为 Secret `LONGBRIDGE_OAUTH_TOKEN_CACHE_B64`；Legacy 方式仍可配置 `LONGBRIDGE_APP_KEY`、`LONGBRIDGE_APP_SECRET`、`LONGBRIDGE_ACCESS_TOKEN`。可选接入点变量（如 `LONGBRIDGE_REGION`）可放在 **Variables** 或 **Secrets**。
+> **GitHub Actions：** 仓库自带 `00-daily-analysis.yml` 已把 `HITHINK_FINANCE_API_KEY`、`TUSHARE_TOKEN`、`TICKFLOW_API_KEY` / `TICKFLOW_*` 和上表中的 `LONGBRIDGE_*` 映射到任务环境。TickFlow 的 API Key 建议放在 **Secrets**，优先级、复权和批量开关可放在 **Variables** 或 **Secrets**。Longbridge OAuth 方式需要一个 client_id（优先 `LONGBRIDGE_OAUTH_CLIENT_ID`；留空且无 Legacy Access Token 时使用 `LONGBRIDGE_APP_KEY` 兼容），并把本机 `~/.longbridge/openapi/tokens/<client_id>` 文件 base64 后保存为 Secret `LONGBRIDGE_OAUTH_TOKEN_CACHE_B64`；Legacy 方式仍可配置 `LONGBRIDGE_APP_KEY`、`LONGBRIDGE_APP_SECRET`、`LONGBRIDGE_ACCESS_TOKEN`。可选接入点变量（如 `LONGBRIDGE_REGION`）可放在 **Variables** 或 **Secrets**。
 
 > **TUSHARE_HTTP_URL 在每日 workflow 中的映射：** `00-daily-analysis.yml` 已显式映射 `TUSHARE_HTTP_URL`（采用 `vars.TUSHARE_HTTP_URL || secrets.TUSHARE_HTTP_URL` 优先级，与仓库现有 `TICKFLOW_PRIORITY` 等非敏感配置取值策略一致）。该地址属"接入地址"配置而非凭据，建议放 **Variables** 便于团队 review 与版本可审计。注意：真实的优先级是 `vars` 非空即胜出，**Secrets 中的同名变量无法覆盖非空 Variables**，两者中只有 vars 为空时 secrets 才被采用，请按这个真实语义做安全建模。GitHub 把 Variables 与 Secrets 设计为两套独立的写权限模型：任何对 repository Variables 有写权限的人或自动化，都可以在不读取、不修改 Secrets 的情况下，通过设置一个非空 Variable 来改写运行时端点（包括将 `TUSHARE_TOKEN` 和完整请求体指向攻击者控制的地址）；Secrets 仅保护值的机密性，并不自动提供"端点完整性"或"优先级覆盖"保障。如确需对端点施加更强的访问控制，请使用 GitHub Environment protection rules、CODEOWNERS、branch protection 或独立的部署审批流程，**不要把"只放 Secrets 而 Variables 留空"当作防改护栏**。未设置或留空时 fetcher 仍走官方 `http://api.tushare.pro` 端点，不会因为本变量缺失而报错。
 
@@ -416,6 +417,7 @@ daily_stock_analysis/
 | 变量名 | 说明 | 默认值 | 必填 |
 |--------|------|--------|:----:|
 | `TUSHARE_TOKEN` | Tushare Pro Token | - | 可选 |
+| `HITHINK_FINANCE_API_KEY` | HiThink Financial API Key；可选，用于 A 股历史日 K。配置后优先尝试，失败或未配置时自动回退现有数据源。 | - | 可选 |
 | `TUSHARE_HTTP_URL` | Tushare Pro HTTP 接入地址；留空时使用官方端点 `http://api.tushare.pro`，仅在需通过公司内网代理、跨境网络或自建镜像时填 `http://` 或 `https://` 开头的完整地址 | `http://api.tushare.pro` | 可选 |
 | `TICKFLOW_API_KEY` | TickFlow API Key；可选，用于 A 股日 K、实时行情、股票列表/名称与大盘复盘增强；失败或权限不足时自动回退。 | - | 可选 |
 | `TICKFLOW_PRIORITY` | TickFlow 普通 A 股日 K 数据源优先级；数字越小越早尝试，默认 `2`；未配置 API Key 时不启用；已登记指数使用独立固定链，不读取本变量；不影响实时行情。 | `2` | 可选 |
@@ -449,6 +451,7 @@ daily_stock_analysis/
 > - 日股/韩股：当前仅走 Yfinance 基础路径获取日线与实时行情；`institution`、`capital_flow`、`dragon_tiger`、`boards` 等依赖 A 股专属源/离岸完整版的能力会降级为 `not_supported`（详见 [市场支持与边界](market-support.md)）；
 > - 台股：在美股/港股 offshore 基础路径之外，`institution` 区块额外展示三大法人原始买卖超净额（TWSE T86 / TPEx，默认开启、fail-open，取不到数据时维持 `not_supported`）；`capital_flow`、`dragon_tiger`、`boards` 仍为 `not_supported`；
 > - 任何异常走 fail-open，仅记录错误，不影响技术面/新闻/筹码主链路。
+> - 配置 `HITHINK_FINANCE_API_KEY` 后，HiThink 会作为可选 A 股历史日 K 数据源以更高优先级实例化；仅影响历史日线获取，不加入 `REALTIME_SOURCE_PRIORITY`，请求失败、权限不足或返回空数据时继续走现有 fallback。
 > - 配置 `TICKFLOW_API_KEY` 后，TickFlow 会作为可选 A 股日 K 数据源和大盘复盘增强源实例化；`TICKFLOW_PRIORITY` 只影响普通 A 股日 K/通用数据源回退链。实时行情优先级由 `REALTIME_SOURCE_PRIORITY` 单独控制，只有显式包含 `tickflow` 时才会使用 TickFlow 实时行情。`REALTIME_SOURCE_PRIORITY` 中排在 `tickflow` 前面的数据源会先被尝试。
 > - 当前 `IndexRegistry` 已登记的 5 个沪深指数为 `sh000016`（上证50）、`sh000688`（科创50）、`sz399001`（深证成指）、`sz399006`（创业板指）和 `sh000300`（沪深300）。使用显式市场输入（也接受 `000016.SH` 等交易所后缀形式）时，它们不参与通用 priority 排序，固定按 Tencent → AkShare → TickFlow → YFinance 降级；未配置或不可用的来源会跳过。裸 `000016` 等代码仍按股票处理，不触发指数链。该固定链不读取 `EFINANCE_PRIORITY`、`AKSHARE_PRIORITY`、`TUSHARE_PRIORITY`、`TICKFLOW_PRIORITY`、`PYTDX_PRIORITY`、`BAOSTOCK_PRIORITY`、`YFINANCE_PRIORITY` 或 `TENCENT_PRIORITY`，不影响普通股票和实时行情的既有顺序。
 > - 已登记指数名称优先来自本地注册表；只有注册名称无效时才按 Tencent → AkShare → TickFlow 查询，名称链不使用 YFinance。指数日线四源全部失败时返回空结果并记录汇总告警；普通股票仍保持既有的 `DataFetchError` 最终失败契约。
