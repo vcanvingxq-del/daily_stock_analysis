@@ -104,6 +104,8 @@ def test_hithink_historical_kline_normalization():
 
     assert float(df.iloc[0]["close"]) == 10.50
     assert float(df.iloc[1]["close"]) == 10.80
+    assert df.iloc[0]["date"] == pd.Timestamp("2026-09-01")
+    assert df.iloc[1]["date"] == pd.Timestamp("2026-09-02")
 
     request = fetcher.session.get.call_args
 
@@ -115,6 +117,8 @@ def test_hithink_historical_kline_normalization():
     assert request.kwargs["params"]["thscode"] == "600096.SH"
     assert request.kwargs["params"]["interval"] == "1d"
     assert request.kwargs["params"]["adjust"] == "forward"
+    assert request.kwargs["params"]["start"] == 1788192000000
+    assert request.kwargs["params"]["end"] == 1788364799999
 
     assert request.kwargs["headers"]["X-api-key"] == "test-key"
 
