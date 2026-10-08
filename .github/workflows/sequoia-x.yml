@@ -1,0 +1,101 @@
+name: Sequoia-X A股选股
+
+on:
+  schedule:
+    # 工作日北京时间 19:15（UTC 11:15），A 股收盘后运行。
+    - cron: '15 11 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '运行模式'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - backfill
+
+concurrency:
+  group: sequoia-x
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: 检出当前仓库
+        uses: actions/checkout@v5
+
+      - name: 检出 Sequoia-X
+        uses: actions/checkout@v5
+        with:
+          repository: sngyai/Sequoia-X
+          ref: 444c0db69ff36b46ef2b22ab265051d60c16029d
+          path: .sequoia-x
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: .sequoia-x/pyproject.toml
+
+      - name: 恢复 Sequoia-X 数据库缓存
+        uses: actions/cache@v4
+        with:
+          path: .sequoia-x/data
+          key: sequoia-x-db-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            sequoia-x-db-${{ runner.os }}-
+
+      - name: 安装 Sequoia-X
+        working-directory: .sequoia-x
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+
+      - name: 校验飞书 Webhook
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+        run: |
+          if [ -z "${FEISHU_WEBHOOK_URL:-}" ]; then
+            echo '❌ FEISHU_WEBHOOK_URL Secret 未配置，Sequoia-X 无法发送结果'
+            exit 1
+          fi
+
+      - name: 运行 Sequoia-X
+        working-directory: .sequoia-x
+        env:
+          DB_PATH: data/sequoia_v2.db
+          START_DATE: '2024-01-01'
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          STRATEGY_WEBHOOK_MA_VOLUME: ${{ secrets.SEQUOIA_WEBHOOK_MA_VOLUME }}
+          STRATEGY_WEBHOOK_TURTLE: ${{ secrets.SEQUOIA_WEBHOOK_TURTLE }}
+          STRATEGY_WEBHOOK_FLAG: ${{ secrets.SEQUOIA_WEBHOOK_FLAG }}
+          STRATEGY_WEBHOOK_SHAKEOUT: ${{ secrets.SEQUOIA_WEBHOOK_SHAKEOUT }}
+          STRATEGY_WEBHOOK_LIMIT_DOWN: ${{ secrets.SEQUOIA_WEBHOOK_LIMIT_DOWN }}
+          STRATEGY_WEBHOOK_RPS: ${{ secrets.SEQUOIA_WEBHOOK_RPS }}
+          STRATEGY_WEBHOOK_PRIVATE_PLACEMENT: ${{ secrets.SEQUOIA_WEBHOOK_PRIVATE_PLACEMENT }}
+        run: |
+          MODE="${{ github.event.inputs.mode || 'daily' }}"
+          echo "🎯 Sequoia-X mode: $MODE"
+          if [ "$MODE" = "backfill" ]; then
+            python main.py --backfill
+          else
+            if [ ! -f data/sequoia_v2.db ]; then
+              echo '❌ 尚未找到历史数据库。请先手动运行本 workflow，并选择 mode=backfill。'
+              exit 1
+            fi
+            python main.py
+          fi
+
+      - name: 上传运行数据库快照
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sequoia-x-data-${{ github.run_number }}
+          path: .sequoia-x/data/
+          if-no-files-found: ignore
+          retention-days: 7
